@@ -1,30 +1,30 @@
 from ftplib import FTP
 from os import walk
 from os import sep
+from itertools import takewhile
 
 __author__ = 'OTymchenko'
 
-# TODO: root folder edit
-# remove everything at once and refill folder
-# exclude files
-
-
 passive_mode = True
 login = 'beedevs_ftp'
-psswrd = 'xxxxxxx'
+psswrd = ''
 remoteFolder = 'beedevs.com/www'
-host = 'beedevs.ftp.com.ua'
+host = 'beedevs.ftp.ukraine.com.ua'
 
-# only for root directories
-excluded = ['.git']
+# only for root directories and files
+excluded = []
+rootFolder = '.'
 
 
 def run():
     ftp = ftp_connect(host, login, psswrd, remoteFolder, passive_mode)
-    if ftp:
 
-        folder = '.'
-        for (dirpath, dirnames, filenames) in walk(folder):
+    clear_folder(ftp)
+
+    if ftp:
+        for (dirpath, dirnames, filenames) in walk(rootFolder):
+
+            smpdirpath = '.' + dirpath[len(rootFolder):]
 
             ftp.cwd('/'+remoteFolder)
 
@@ -32,7 +32,7 @@ def run():
             if not (dirpath == '.' or dirpath == '..'):
 
                 for excludedPath in excluded:
-                    fullPath = folder + sep + excludedPath
+                    fullPath = rootFolder + sep + excludedPath
                     if dirpath[:len(fullPath)] == fullPath:
                         isExcluded = True
                         break
@@ -40,21 +40,18 @@ def run():
                 if isExcluded:
                    continue
 
-                ftp.cwd(dirpath.replace(sep, '/'))
+                ftp.cwd(smpdirpath.replace(sep, '/'))
 
-            folders = ftp.nlst()
             if dirnames and len(dirnames) > 0:
                 for dir in dirnames:
-
                     if dir in excluded:
                         continue
-
-
-                    if not dir in folders:
-                        ftp.mkd(dir)
+                    ftp.mkd(dir)
 
             if filenames and len(filenames) > 0:
                 for fileName in filenames:
+                    if fileName in excluded:
+                        continue
                     ftp_send_file(ftp, open_file(dirpath+sep+fileName))
 
         ftp.quit()
@@ -65,14 +62,37 @@ def ftp_connect(host, login, psswrd, remoteFolder = None, passive_mode = True):
     ftp = FTP(host, login, psswrd)
     ftp.set_pasv(passive_mode)
     if remoteFolder:
-        ftp.cwd(remoteFolder)
+        ftp.cwd('/'+remoteFolder)
     return ftp
 
 def ftp_ls(ftp):
-    print(ftp.retrlines('LIST'))
+    ftp.retrlines('LIST')
 
 def ftp_send_file(ftp, file):
     ftp.storbinary("STOR "+file.name, file)
+
+def clear_folder(ftp):
+
+    genRes = ftp.mlsd()
+
+    for item in takewhile(lambda x: x is not None, genRes):
+        name = item[0]
+
+        if name == '.' or name == '..':
+            continue
+
+        data = item[1]
+        isDir = False
+        if data:
+            isDir = data['type'] == 'dir'
+
+        if isDir:
+            ftp.cwd(name)
+            clear_folder(ftp)
+            ftp.cwd('..')
+            ftp.rmd(name)
+        else:
+            ftp.delete(name)
 
 
 ## data procedures
